@@ -39,9 +39,24 @@ WS_PATH = "/api/v2/channels/samsung.remote.control"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 SSDP_TARGETS = ("urn:samsung.com:device:RemoteControlReceiver:1", "urn:dial-multiscreen-org:service:dial:1")
 KEY_DELAY = 0.4  # pausa entre teclas: la tele descarta pulsaciones demasiado seguidas
+APP_LIST_TIMEOUT = 8  # segundos que esperamos la lista de apps antes de pasar a las habituales
+# Apps habituales, para las teles (sobre todo de 2016) que no dan la lista de instaladas
+KNOWN_APPS = [
+    {"appId": "11101200001", "name": "Netflix"},
+    {"appId": "111299001912", "name": "YouTube"},
+    {"appId": "3201512006785", "name": "Prime Video"},
+    {"appId": "3201901017640", "name": "Disney+"},
+    {"appId": "3201606009684", "name": "Spotify"},
+    {"appId": "3201807016597", "name": "Apple TV"},
+    {"appId": "3201512006963", "name": "Plex"},
+]
 
 
 class TVError(Exception):
+    pass
+
+
+class TVTimeout(TVError):
     pass
 
 
@@ -193,6 +208,7 @@ class WebSocket:
 
 SERIES_YEARS = {"HU": 2014, "JU": 2015, "JS": 2015, "KU": 2016, "KS": 2016, "MU": 2017, "NU": 2018,
                 "RU": 2019, "TU": 2020, "AU": 2021, "BU": 2022, "CU": 2023, "DU": 2024}
+SINGLE_SERIES_YEARS = {"H": 2014, "J": 2015, "K": 2016, "M": 2017, "N": 2018, "R": 2019, "T": 2020}
 QLED_YEARS = {"R": 2019, "T": 2020, "A": 2021, "B": 2022, "C": 2023, "D": 2024}
 
 
@@ -205,6 +221,9 @@ def model_year(device):
     m = re.match(r"[A-Z]{2}\d{2}([A-Z]{2})\d", name)  # UE55NU7400, UN50RU7100...
     if m and m.group(1) in SERIES_YEARS:
         return SERIES_YEARS[m.group(1)]
+    m = re.match(r"[A-Z]{2}\d{2}([A-Z])\d{4}", name)  # UE32K5570, UE32T4300...
+    if m and m.group(1) in SINGLE_SERIES_YEARS:
+        return SINGLE_SERIES_YEARS[m.group(1)]
     m = re.match(r"(?:QE|QN|QA|GQ)\d{2}QN?\d{2,3}([RTABCD])", name)  # QE55Q60R, QN65QN90A...
     if m:
         return QLED_YEARS[m.group(1)]
@@ -284,11 +303,11 @@ class SamsungTV:
     def _recv_json(ws, deadline):
         remaining = deadline - time.time()
         if remaining <= 0:
-            raise TVError("La tele no ha respondido a tiempo")
+            raise TVTimeout("La tele no ha respondido a tiempo")
         try:
             return json.loads(ws.recv(timeout=remaining))
         except socket.timeout as e:
-            raise TVError("La tele no ha respondido a tiempo") from e
+            raise TVTimeout("La tele no ha respondido a tiempo") from e
         except ValueError:
             return {}
 
@@ -419,14 +438,16 @@ def tcp_latency(host, port=REST_PORT, samples=10):
 
 # --- Guía de ajustes que solo se pueden cambiar con el mando ---
 
-OLD, NEW = "2016-2021", "2022+"
+Y2016, MID, NEW = "2016", "2017-2021", "2022+"
 
 GUIDE = [
     {
         "id": "actualizar", "titulo": "Actualiza el software de la tele", "impacto": "alto",
         "por_que": "Samsung sigue corrigiendo fallos de memoria y de las apps de vídeo años después de la venta. "
                    "Una tele que nunca se ha actualizado arrastra errores que ya están resueltos.",
-        "pasos": {OLD: "Configuración > Soporte > Actualización de software > Actualizar ahora. Activa también "
+        "pasos": {Y2016: "Configuración > Soporte > Actualización de software > Actualizar ahora. Activa también "
+                         "«Actualización automática».",
+                  MID: "Configuración > Soporte > Actualización de software > Actualizar ahora. Activa también "
                        "«Actualización automática».",
                   NEW: "Configuración > Todos los ajustes > Soporte > Actualización de software > Actualizar ahora."},
     },
@@ -435,7 +456,10 @@ GUIDE = [
         "por_que": "Apagar con el mando no apaga la tele: queda en reposo con la memoria llena de lo que tenías "
                    "abierto («Inicio instantáneo»). Tras semanas así se vuelve lenta y las apps se quedan "
                    "cargando. Un reinicio de verdad lo vacía todo.",
-        "pasos": {OLD: "Con la tele encendida, mantén pulsado el botón de encendido del mando hasta que la pantalla "
+        "pasos": {Y2016: "Con la tele encendida, mantén pulsado el botón de encendido del mando hasta que la "
+                         "pantalla se apague y vuelva a salir el logo de Samsung (unos 5 segundos). Si no "
+                         "funciona, desenchúfala 1 minuto.",
+                  MID: "Con la tele encendida, mantén pulsado el botón de encendido del mando hasta que la pantalla "
                        "se apague y vuelva a salir el logo de Samsung (unos 5 segundos). Si no funciona, desenchúfala "
                        "1 minuto.",
                   NEW: "Igual: mantén pulsado el botón de encendido hasta ver el logo de Samsung, o desenchúfala "
@@ -446,7 +470,9 @@ GUIDE = [
         "id": "autoejecutar", "titulo": "Que no se abran apps solas al encender", "impacto": "medio",
         "por_que": "Por defecto la tele arranca Smart Hub, la última app que usaste y a veces Samsung TV Plus en "
                    "cuanto se enciende, y todas compiten por la poca memoria que tiene.",
-        "pasos": {OLD: "Configuración > General > Funciones inteligentes: desactiva «Ejecución automática de Smart "
+        "pasos": {Y2016: "Configuración > Sistema > Configuración experta: desactiva «Ejecución automática de "
+                         "Smart Hub» y «Ejecutar automáticamente la última aplicación».",
+                  MID: "Configuración > General > Funciones inteligentes: desactiva «Ejecución automática de Smart "
                        "Hub», «Ejecutar automáticamente la última aplicación» y, si aparece, «Ejecución automática "
                        "de Samsung TV Plus».",
                   NEW: "Configuración > Todos los ajustes > General y privacidad > Opciones de la pantalla de inicio "
@@ -458,7 +484,10 @@ GUIDE = [
         "por_que": "«Servicios de información de visualización» analiza continuamente lo que sale en pantalla "
                    "(también por HDMI) para enviárselo a Samsung y sus anunciantes. Gasta procesador y red, y no "
                    "te aporta nada.",
-        "pasos": {OLD: "Configuración > Soporte > Términos y privacidad > Configuración de privacidad (o «Términos "
+        "pasos": {Y2016: "Configuración > Soporte > Términos y política: desactiva «Servicios de información de "
+                         "visualización» (en algunos modelos se llama «SyncPlus y Marketing») y, si aparecen, "
+                         "«Anuncios basados en intereses» y los servicios de reconocimiento de voz.",
+                  MID: "Configuración > Soporte > Términos y privacidad > Configuración de privacidad (o «Términos "
                        "y políticas»): desactiva «Servicios de información de visualización» y «Anuncios basados en "
                        "intereses». Si no hablas a la tele, desactiva también los servicios de reconocimiento de voz.",
                   NEW: "Configuración > Todos los ajustes > General y privacidad > Términos y privacidad: desactiva "
@@ -469,14 +498,16 @@ GUIDE = [
         "id": "apps", "titulo": "Borra las apps que no usas", "impacto": "medio",
         "por_que": "Muchas teles traen unas 2-4 GB de almacenamiento y menos de 2 GB de memoria. Con el "
                    "almacenamiento casi lleno las apps no pueden guardar su caché y cargan todo de nuevo cada vez.",
-        "pasos": {OLD: "Inicio > Apps > Configuración (rueda arriba a la derecha) > selecciona la app > Eliminar.",
+        "pasos": {Y2016: "Inicio > Apps (el icono de tres cuadrados) > marca la app > mantén pulsado el botón "
+                         "central del mando > Eliminar > Sí.",
+                  MID: "Inicio > Apps > Configuración (rueda arriba a la derecha) > selecciona la app > Eliminar.",
                   NEW: "Inicio > Apps > Configuración de apps (rueda) > selecciona la app > Eliminar."},
         "nota": "`python3 tools/samsungtv.py apps` lista lo que tienes instalado.",
     },
     {
         "id": "device-care", "titulo": "Pasa el «Cuidado del dispositivo»", "impacto": "medio", "desde": 2020,
         "por_que": "Desde 2020 la tele trae un limpiador que cierra procesos y libera memoria.",
-        "pasos": {OLD: "Configuración > Soporte > Cuidado del dispositivo > Iniciar cuidado del dispositivo.",
+        "pasos": {MID: "Configuración > Soporte > Cuidado del dispositivo > Iniciar cuidado del dispositivo.",
                   NEW: "Configuración > Todos los ajustes > Soporte > Cuidado del dispositivo > Iniciar cuidado "
                        "del dispositivo."},
     },
@@ -484,8 +515,10 @@ GUIDE = [
         "id": "cache", "titulo": "Vacía la caché de la app que se queda cargando", "impacto": "alto",
         "por_que": "Una caché corrupta es la causa más habitual de que una app concreta (Netflix, YouTube, "
                    "Prime Video, Disney+...) se quede en la pantalla de carga.",
-        "pasos": {OLD: "En teles de 2020-2021: Configuración > Soporte > Cuidado del dispositivo > Gestionar "
-                       "almacenamiento > marca la app > Ver detalles > Borrar caché. En 2016-2019 no existe ese "
+        "pasos": {Y2016: "No hay botón para vaciar la caché: elimina la app (paso «apps») y vuelve a instalarla "
+                         "desde Apps; al reinstalarla empieza limpia.",
+                  MID: "En teles de 2020-2021: Configuración > Soporte > Cuidado del dispositivo > Gestionar "
+                       "almacenamiento > marca la app > Ver detalles > Borrar caché. En 2017-2019 no existe ese "
                        "botón: elimina la app y vuelve a instalarla desde Apps.",
                   NEW: "Configuración > Todos los ajustes > Soporte > Cuidado del dispositivo > Gestionar "
                        "almacenamiento > marca la app > Ver detalles > Borrar caché."},
@@ -494,7 +527,10 @@ GUIDE = [
         "id": "red", "titulo": "Mejora la conexión", "impacto": "alto",
         "por_que": "Si la serie se para a cargar a mitad, casi siempre es la red y no la tele: el Wi-Fi de las "
                    "teles es flojo y está detrás del mueble. Netflix pide unos 5 Mbps en HD y 15-25 Mbps en 4K.",
-        "pasos": {OLD: "Si puedes, conecta un cable de red. Si no, usa la red de 5 GHz del router y acerca el router "
+        "pasos": {Y2016: "Si puedes, conecta un cable de red. Si no, acerca el router o pon un repetidor, y usa la "
+                         "red de 5 GHz si tu tele la ve. Comprueba con Configuración > Soporte > Autodiagnóstico > "
+                         "Prueba de conexión de Smart Hub.",
+                  MID: "Si puedes, conecta un cable de red. Si no, usa la red de 5 GHz del router y acerca el router "
                        "o pon un repetidor. Comprueba con Configuración > Soporte > Autodiagnóstico > Prueba de "
                        "conexión de Smart Hub.",
                   NEW: "Si puedes, conecta un cable de red. Si no, usa la red de 5 GHz. Comprueba con Configuración "
@@ -505,7 +541,9 @@ GUIDE = [
         "id": "dns", "titulo": "Cambia el DNS", "impacto": "medio",
         "por_que": "El DNS de muchas operadoras es lento o falla a ratos, y la tele se queda «cargando» antes de "
                    "empezar a reproducir. Un DNS público suele arreglarlo.",
-        "pasos": {OLD: "Configuración > General > Red > Estado de red > Configuración IP > Configuración DNS: "
+        "pasos": {Y2016: "Configuración > Red > Estado de red > Configuración IP > Configuración DNS: Introducir "
+                         "manualmente > 1.1.1.1 (o 8.8.8.8) > Aceptar.",
+                  MID: "Configuración > General > Red > Estado de red > Configuración IP > Configuración DNS: "
                        "Introducir manualmente > 1.1.1.1 (o 8.8.8.8) > Aceptar.",
                   NEW: "Configuración > Todos los ajustes > Conexión > Red > Estado de red > Configuración IP > "
                        "Configuración DNS: Introducir manualmente > 1.1.1.1 (o 8.8.8.8) > Aceptar."},
@@ -516,7 +554,9 @@ GUIDE = [
     {
         "id": "calidad", "titulo": "Si la red no da para más, baja la calidad en la app", "impacto": "bajo",
         "por_que": "Con una conexión justa es mejor ver en HD sin cortes que en 4K parándose cada minuto.",
-        "pasos": {OLD: "Dentro de cada app: en Netflix, desde netflix.com > Cuenta > Perfil > Uso de datos; en "
+        "pasos": {Y2016: "Dentro de cada app: en Netflix, desde netflix.com > Cuenta > Perfil > Uso de datos; en "
+                         "YouTube, en el vídeo > Configuración > Calidad.",
+                  MID: "Dentro de cada app: en Netflix, desde netflix.com > Cuenta > Perfil > Uso de datos; en "
                        "YouTube, en el vídeo > Configuración > Calidad.",
                   NEW: "Igual que en teles anteriores: la calidad se elige dentro de cada app."},
     },
@@ -524,7 +564,9 @@ GUIDE = [
         "id": "reset-smarthub", "titulo": "Último recurso: restablece Smart Hub", "impacto": "alto",
         "por_que": "Borra todas las apps, sus datos y sesiones, pero no tus canales ni los ajustes de imagen. "
                    "Arregla la mayoría de teles que siguen lentas después de todo lo anterior.",
-        "pasos": {OLD: "Configuración > Soporte > Autodiagnóstico > Restablecer Smart Hub (PIN por defecto: 0000).",
+        "pasos": {Y2016: "Configuración > Soporte > Autodiagnóstico > Restablecer Smart Hub (PIN por defecto: "
+                         "0000).",
+                  MID: "Configuración > Soporte > Autodiagnóstico > Restablecer Smart Hub (PIN por defecto: 0000).",
                   NEW: "Configuración > Todos los ajustes > Soporte > Cuidado del dispositivo > Autodiagnóstico > "
                        "Restablecer Smart Hub (PIN por defecto: 0000)."},
         "nota": "Después tendrás que volver a instalar las apps e iniciar sesión en cada una.",
@@ -540,7 +582,9 @@ GUIDE_END = (
 
 
 def year_group(year):
-    return NEW if year and year >= 2022 else OLD
+    if year and year >= 2022:
+        return NEW
+    return Y2016 if year and year <= 2016 else MID
 
 
 def guide_markdown():
@@ -565,7 +609,9 @@ def guide_markdown():
         out.append("")
         out.append(step["por_que"])
         out.append("")
-        out.append(f"- **Teles de 2016 a 2021:** {step['pasos'][OLD]}")
+        if Y2016 in step["pasos"]:
+            out.append(f"- **Teles de 2016:** {step['pasos'][Y2016]}")
+        out.append(f"- **Teles de 2017 a 2021:** {step['pasos'][MID]}")
         out.append(f"- **Teles de 2022 en adelante:** {step['pasos'][NEW]}")
         if step.get("nota"):
             out.append("")
@@ -609,7 +655,8 @@ def cmd_buscar(args):
             found = {h: d for h, d in ((h, describe(h)) for h in sorted(port_scan(net))) if d}
     if not found:
         print("No he encontrado ninguna. Comprueba que la tele está encendida (no en reposo) y en la misma red, "
-              "o mira su IP en Configuración > General > Red > Estado de red y usa --ip.")
+              "o mira su IP en Configuración > Red > Estado de red (en teles de 2017 en adelante, dentro de "
+              "General) y usa --ip.")
         return 1
     for host, dev in found.items():
         print(f"  {host}  {dev.get('name', '?')}  ({dev.get('modelName', '?')})")
@@ -645,19 +692,27 @@ def cmd_info(args):
 
 
 def _apps_with_state(tv):
-    apps = tv.installed_apps()
+    """Apps instaladas con su estado, y si la lista es completa o solo las habituales."""
+    try:
+        apps, complete = tv.installed_apps(timeout=APP_LIST_TIMEOUT), True
+    except TVTimeout:
+        apps, complete = KNOWN_APPS, False
     with ThreadPoolExecutor(max_workers=8) as pool:
         states = list(pool.map(lambda a: tv.app_running(a["appId"]), apps))
-    return list(zip(apps, states))
+    items = list(zip(apps, states))
+    if not complete:
+        print("· Esta tele no da la lista de apps instaladas (pasa en las de 2016); reviso solo las habituales.")
+        items = [(app, state) for app, state in items if state is not None]
+    return items, complete
 
 
 def cmd_apps(args):
     tv = tv_from(args)
     try:
-        items = _apps_with_state(tv)
+        items, complete = _apps_with_state(tv)
     finally:
         tv.close()
-    print(f"{len(items)} apps instaladas (* = abierta ahora en memoria):")
+    print(f"{len(items)} apps {'instaladas' if complete else 'habituales encontradas'} (* = abierta ahora en memoria):")
     for app, running in sorted(items, key=lambda x: x[0].get("name", "").lower()):
         print(f"  {'*' if running else ' '} {app.get('name', '?'):<30} {app['appId']}")
     print("\nPara borrar las que no uses: Inicio > Apps > Configuración > Eliminar (paso «apps» de la guía).")
@@ -667,7 +722,7 @@ def cmd_apps(args):
 def cmd_limpiar(args):
     tv = tv_from(args)
     try:
-        items = _apps_with_state(tv)
+        items, _ = _apps_with_state(tv)
         running = [app for app, state in items if state]
         if not running:
             print("No había ninguna app abierta en segundo plano.")
@@ -678,7 +733,7 @@ def cmd_limpiar(args):
     finally:
         tv.close()
     unknown = sum(1 for _, state in items if state is None)
-    if unknown == len(items) and items:
+    if unknown == len(items):
         print("Esta tele no informa de qué apps están abiertas. Un reinicio en frío las cierra todas: `reiniciar`.")
     else:
         print(f"Listo: {len(running)} apps cerradas. Para vaciar la memoria del todo, haz un reinicio en frío "
@@ -735,10 +790,10 @@ def cmd_diagnostico(args):
         advice.append(("red", "el Wi-Fi es lo primero que falla cuando una serie se queda cargando"))
 
     try:
-        items = _apps_with_state(tv)
+        items, complete = _apps_with_state(tv)
         running = [app.get("name", app["appId"]) for app, state in items if state]
-        print(f"{'!' if len(running) > 2 else '✓'} {len(items)} apps instaladas, {len(running)} abiertas en "
-              f"memoria{': ' + ', '.join(running) if running else ''}")
+        print(f"{'!' if len(running) > 2 else '✓'} {len(items)} apps {'instaladas' if complete else 'habituales'}, "
+              f"{len(running)} abiertas en memoria{': ' + ', '.join(running) if running else ''}")
         if running:
             advice.append(("limpiar", f"hay {len(running)} apps ocupando memoria (`limpiar` las cierra)"))
         if len(items) > 25:
@@ -748,7 +803,11 @@ def cmd_diagnostico(args):
     finally:
         tv.close()
 
-    advice.append(("actualizar", "las actualizaciones arreglan fallos de rendimiento"))
+    update = ("actualizar", "las actualizaciones arreglan fallos de rendimiento")
+    if year and year <= 2017:
+        advice.insert(0, update)  # en teles antiguas, el firmware de fábrica suele ser el más lento
+    else:
+        advice.append(update)
     advice.append(("cache", "si una app concreta se queda cargando, suele ser su caché"))
     advice.append(("autoejecutar", "evita que Smart Hub y la última app arranquen solas"))
     advice.append(("privacidad", "el análisis de pantalla en segundo plano consume recursos"))

@@ -47,7 +47,8 @@ En Windows escribe `python` en lugar de `python3`.
 La primera vez que se conecta, **la tele muestra un aviso: pulsa «Permitir»** con el mando. Solo
 pasa una vez; el permiso se guarda en `~/.cleansamsungtv.json`.
 
-Si `buscar` no la encuentra, mira la IP en la tele (Configuración > General > Red > Estado de red)
+Si `buscar` no la encuentra, mira la IP en la tele (Configuración > Red > Estado de red; desde 2017,
+dentro de General)
 y pásala con `--ip 192.168.1.50`, o pon `TV_HOST=192.168.1.50` en el entorno.
 
 ## Todos los comandos
@@ -70,12 +71,16 @@ La guía completa, por si prefieres leerla: [GUIA.md](GUIA.md).
 
 | Año (letra del modelo) | Herramienta | Guía |
 |---|---|---|
-| 2018 en adelante (NU, RU, TU, AU, BU, CU, DU; QLED Q…R, Q…T, QN…A…) | Sí, con aviso de «Permitir» la primera vez | Sí |
-| 2016-2017 (KU, KS, MU) | Sí, sin aviso | Sí |
+| 2018 en adelante (NU, N, RU, TU, T, AU, BU, CU, DU; QLED Q…R, Q…T, QN…A…) | Sí, con aviso de «Permitir» la primera vez | Sí |
+| 2017 (MU, M…) | Sí, sin aviso | Sí |
+| 2016 (K, KU, KS) | Sí, normalmente sin aviso; puede que no dé la lista de apps y `limpiar` revise solo las habituales | Sí, con sus menús propios |
 | 2015 o anterior (JU, HU…) | No: usan un protocolo antiguo | Sí, con menús parecidos |
 
 El año sale del nombre del modelo, en la etiqueta trasera o en Configuración > Soporte > Acerca de
-este TV: en `UE55MU6100` la `M` es 2017; en `UE50RU7105`, la `R` es 2019.
+este TV: en `UE55MU6100` la `M` es 2017; en `UE50RU7105`, la `R` es 2019; en `UE32K5570`, la `K` es 2016.
+
+Hay fichas con el plan concreto para algunos modelos en [`examples/`](examples/):
+[Samsung UE32K5570 (2016)](examples/samsung-ue32k5570/README.md).
 
 ## Lo que no puede hacer (y por qué)
 

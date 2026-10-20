@@ -25,6 +25,8 @@ class ModelYearTest(unittest.TestCase):
         self.assertEqual(samsungtv.model_year({"modelName": "UE55MU6100"}), 2017)
         self.assertEqual(samsungtv.model_year({"modelName": "UE50RU7105"}), 2019)
         self.assertEqual(samsungtv.model_year({"modelName": "UE43AU7105"}), 2021)
+        self.assertEqual(samsungtv.model_year({"modelName": "UE32K5570SUXXC"}), 2016)
+        self.assertEqual(samsungtv.model_year({"modelName": "UE32T4300"}), 2020)
         self.assertEqual(samsungtv.model_year({"modelName": "QE55Q60R"}), 2019)
         self.assertEqual(samsungtv.model_year({"modelName": "QE65QN90A"}), 2021)
 
@@ -43,12 +45,16 @@ class GuideTest(unittest.TestCase):
         ids = [s["id"] for s in samsungtv.GUIDE]
         self.assertEqual(len(ids), len(set(ids)))
         for step in samsungtv.GUIDE:
-            self.assertEqual(set(step["pasos"]), {samsungtv.OLD, samsungtv.NEW}, step["id"])
+            groups = {samsungtv.MID, samsungtv.NEW}
+            if step.get("desde", 2016) <= 2016:
+                groups.add(samsungtv.Y2016)
+            self.assertEqual(set(step["pasos"]), groups, step["id"])
 
     def test_year_group(self):
-        self.assertEqual(samsungtv.year_group(2018), samsungtv.OLD)
+        self.assertEqual(samsungtv.year_group(2016), samsungtv.Y2016)
+        self.assertEqual(samsungtv.year_group(2018), samsungtv.MID)
         self.assertEqual(samsungtv.year_group(2023), samsungtv.NEW)
-        self.assertEqual(samsungtv.year_group(None), samsungtv.OLD)
+        self.assertEqual(samsungtv.year_group(None), samsungtv.MID)
 
 
 class AgainstMockTV(unittest.TestCase):
@@ -100,6 +106,16 @@ class AgainstMockTV(unittest.TestCase):
         self.assertIn("2 apps cerradas", out)
         self.assertEqual(tv.keys, [("Click", "KEY_HOME")])
 
+    def test_limpiar_without_app_list_falls_back_to_known_apps(self):
+        tv = self.start(model="16_JAZZL_FHD", model_name="UE32K5570SUXXC", app_list=False,
+                        apps=[{"appId": "11101200001", "name": "Netflix"}], running={"11101200001"})
+        with mock.patch.object(samsungtv, "APP_LIST_TIMEOUT", 0.3):
+            code, out = self.run_cli(tv, "limpiar")
+        self.assertEqual(code, 0)
+        self.assertIn("reviso solo las habituales", out)
+        self.assertIn("Cerrada: Netflix", out)
+        self.assertEqual(tv.running, set())
+
     def test_limpiar_with_nothing_open(self):
         tv = self.start()
         code, out = self.run_cli(tv, "limpiar")
@@ -150,6 +166,13 @@ class AgainstMockTV(unittest.TestCase):
         self.assertIn("limpiar:", out)
         self.assertNotIn("device-care", out)
 
+    def test_diagnostico_2016_tv_starts_with_update(self):
+        tv = self.start(model="16_JAZZL_FHD", model_name="UE32K5570SUXXC")
+        code, out = self.run_cli(tv, "diagnostico", "--muestras", "2")
+        self.assertEqual(code, 0)
+        self.assertIn("2016", out)
+        self.assertIn("1. actualizar", out)
+
     def test_diagnostico_new_wired_tv(self):
         tv = self.start(model="21_NIKEM_UHD", model_name="UE43AU7105", network="wired")
         code, out = self.run_cli(tv, "diagnostico", "--muestras", "2")
@@ -170,6 +193,13 @@ class AgainstMockTV(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("Hechos: actualizar, reinicio-frio, autoejecutar", out.getvalue())
         self.assertNotIn("Cuidado del dispositivo > Iniciar", out.getvalue())  # no existe en 2017
+
+    def test_guia_2016_uses_2016_menus(self):
+        out = io.StringIO()
+        with mock.patch("builtins.input", lambda *_: "n"), contextlib.redirect_stdout(out):
+            samsungtv.main(["guia", "--anyo", "2016"])
+        self.assertIn("Sistema > Configuración experta", out.getvalue())
+        self.assertNotIn("Funciones inteligentes", out.getvalue())
 
 
 if __name__ == "__main__":

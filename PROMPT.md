@@ -10,10 +10,11 @@ Quiero que mi tele Samsung vuelva a ir fluida: va lenta y se queda pillada carga
 Mi tele es: <MODELO, p. ej. UE55NU7405, o «no lo sé»>. Usa `tools/samsungtv.py` de este repositorio
 (solo necesita Python 3, sin dependencias) y sigue estos pasos. Explícame cada cosa en lenguaje
 sencillo y pregúntame antes de lo que dependa de mí.
+Si hay una ficha de mi modelo en `examples/`, síguela y apunta en ella lo que veas distinto.
 
 Conectar
-- Ejecuta `python3 tools/samsungtv.py buscar`. Si no la encuentra, pídeme la IP (Configuración > General
-  > Red > Estado de red) y usa `--ip`.
+- Ejecuta `python3 tools/samsungtv.py buscar`. Si no la encuentra, pídeme la IP (Configuración > Red >
+  Estado de red; desde 2017, dentro de General) y usa `--ip`.
 - Avísame antes de la primera conexión: la tele mostrará un aviso y tengo que pulsar «Permitir».
 - Si la tele es de 2015 o anterior, la herramienta no puede conectarse: salta directamente a la guía.
 

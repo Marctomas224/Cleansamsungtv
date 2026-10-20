@@ -13,7 +13,7 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 class MockTV:
     def __init__(self, model="18_KANTM2_UHD", model_name="UE55NU7405", network="wireless", token_auth=False,
-                 apps=None, running=(), authorize=True):
+                 apps=None, running=(), authorize=True, app_list=True):
         self.device = {
             "OS": "Tizen", "PowerState": "on", "TokenAuthSupport": "true" if token_auth else "false",
             "model": model, "modelName": model_name, "name": "[TV] Samsung 7 Series (55)",
@@ -26,6 +26,7 @@ class MockTV:
         ]
         self.running = set(running)
         self.authorize = authorize
+        self.app_list = app_list  # las de 2016 pueden no responder a ed.installedApp.get
         self.keys = []
         self.launched = []
         self.connect_urls = []
@@ -111,7 +112,7 @@ class MockTV:
             params = msg.get("params", {})
             if msg.get("method") == "ms.remote.control":
                 self.keys.append((params["Cmd"], params["DataOfCmd"]))
-            elif params.get("event") == "ed.installedApp.get":
+            elif params.get("event") == "ed.installedApp.get" and self.app_list:
                 self._send(conn, {"event": "ed.installedApp.get", "data": {"data": self.apps}})
             elif params.get("event") == "ed.apps.launch":
                 self.launched.append(params["data"]["appId"])
